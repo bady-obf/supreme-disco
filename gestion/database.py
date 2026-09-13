@@ -11,7 +11,7 @@ https://docs.python.org/3/library/sqlite3.html
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
@@ -39,10 +39,14 @@ CREATE TABLE IF NOT EXISTS clients (
 );
 
 CREATE TABLE IF NOT EXISTS ventes (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    date_vente TEXT NOT NULL,
-    client_id  INTEGER,
-    total      REAL NOT NULL DEFAULT 0,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    date_vente   TEXT NOT NULL,
+    client_id    INTEGER,
+    montant_brut REAL NOT NULL DEFAULT 0,
+    remise       REAL NOT NULL DEFAULT 0,
+    taux_tva     REAL NOT NULL DEFAULT 0,
+    montant_tva  REAL NOT NULL DEFAULT 0,
+    total        REAL NOT NULL DEFAULT 0,
     FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE SET NULL
 );
 
@@ -92,11 +96,13 @@ CREATE TABLE IF NOT EXISTS lignes_appro (
 """
 
 # Valeurs par defaut des parametres de l'entreprise (utilisees sur les factures).
+# taux_tva : taux de TVA par defaut (Senegal / zone OHADA : 18 %).
 PARAMETRES_DEFAUT = {
     "entreprise_nom": "Mon Entreprise",
     "entreprise_adresse": "",
     "entreprise_telephone": "",
     "entreprise_email": "",
+    "taux_tva": "18",
 }
 
 
@@ -114,6 +120,7 @@ class Database:
         # Active le respect des cles etrangeres (desactive par defaut en SQLite).
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
+        self._migrer()
         # Insere les parametres par defaut s'ils n'existent pas encore.
         for cle, valeur in PARAMETRES_DEFAUT.items():
             self.conn.execute(
@@ -121,6 +128,29 @@ class Database:
                 (cle, valeur),
             )
         self.conn.commit()
+
+    def _migrer(self) -> None:
+        """Ajoute les colonnes manquantes aux bases creees par une version anterieure.
+
+        SQLite ne recree pas une table existante (``IF NOT EXISTS``) : on ajoute
+        donc les nouvelles colonnes de ``ventes`` (TVA, remise) au besoin.
+        """
+        colonnes = {r["name"] for r in
+                    self.conn.execute("PRAGMA table_info(ventes)").fetchall()}
+        ajouts = {
+            "montant_brut": "REAL NOT NULL DEFAULT 0",
+            "remise": "REAL NOT NULL DEFAULT 0",
+            "taux_tva": "REAL NOT NULL DEFAULT 0",
+            "montant_tva": "REAL NOT NULL DEFAULT 0",
+        }
+        for colonne, declaration in ajouts.items():
+            if colonne not in colonnes:
+                self.conn.execute(
+                    f"ALTER TABLE ventes ADD COLUMN {colonne} {declaration}")
+        # Pour les anciennes ventes (sans detail TVA), aligne le brut sur le total.
+        self.conn.execute(
+            "UPDATE ventes SET montant_brut = total "
+            "WHERE montant_brut = 0 AND total <> 0")
 
     def fermer(self) -> None:
         """Ferme la connexion a la base."""
@@ -267,12 +297,21 @@ class Database:
     # Ventes
     # ------------------------------------------------------------------ #
     def enregistrer_vente(
-        self, client_id: int | None, lignes: list[dict]
+        self,
+        client_id: int | None,
+        lignes: list[dict],
+        remise: float = 0.0,
+        taux_tva: float | None = None,
     ) -> int:
         """Enregistre une vente et decremente le stock, en une transaction.
 
         ``lignes`` est une liste de dictionnaires :
         ``{"produit_id": int, "quantite": int}``.
+
+        ``remise`` : montant de remise (en FCFA) applique sur le total brut.
+        ``taux_tva`` : taux de TVA en pourcentage ; si ``None``, le parametre
+        ``taux_tva`` de la base est utilise. Le total enregistre est TTC :
+        ``total = (brut - remise) + TVA``.
 
         Leve :class:`StockInsuffisant` si un produit n'a pas assez de stock ;
         dans ce cas AUCUNE modification n'est appliquee (rollback).
@@ -281,10 +320,16 @@ class Database:
         if not lignes:
             raise ValueError("Une vente doit contenir au moins une ligne.")
 
+        if taux_tva is None:
+            try:
+                taux_tva = float(self.obtenir_parametre("taux_tva", "0") or 0)
+            except ValueError:
+                taux_tva = 0.0
+
         try:
             # Verifie d'abord la disponibilite de tout le panier.
             details = []
-            total = 0.0
+            montant_brut = 0.0
             for ligne in lignes:
                 produit = self.obtenir_produit(ligne["produit_id"])
                 if produit is None:
@@ -300,13 +345,23 @@ class Database:
                         f"demande {quantite}, disponible {produit['quantite']}."
                     )
                 montant = quantite * produit["prix_vente"]
-                total += montant
+                montant_brut += montant
                 details.append((produit, quantite, montant))
+
+            # Calcule remise (bornee), base HT, TVA et total TTC.
+            remise = max(0.0, min(float(remise), montant_brut))
+            taux_tva = max(0.0, float(taux_tva))
+            base_ht = montant_brut - remise
+            montant_tva = round(base_ht * taux_tva / 100.0, 2)
+            total = round(base_ht + montant_tva, 2)
 
             # Enregistre l'entete de vente.
             cur = self.conn.execute(
-                "INSERT INTO ventes (date_vente, client_id, total) VALUES (?, ?, ?)",
-                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), client_id, total),
+                "INSERT INTO ventes "
+                "(date_vente, client_id, montant_brut, remise, taux_tva, montant_tva, total) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), client_id,
+                 montant_brut, remise, taux_tva, montant_tva, total),
             )
             vente_id = int(cur.lastrowid)
 
@@ -350,9 +405,10 @@ class Database:
         ).fetchall()
 
     def obtenir_vente(self, vente_id: int) -> sqlite3.Row | None:
-        """Retourne l'entete d'une vente avec les coordonnees du client."""
+        """Retourne l'entete d'une vente (avec detail TVA) et les infos client."""
         return self.conn.execute(
-            """SELECT v.id, v.date_vente, v.total,
+            """SELECT v.id, v.date_vente, v.montant_brut, v.remise,
+                      v.taux_tva, v.montant_tva, v.total,
                       c.nom AS client_nom, c.telephone AS client_telephone,
                       c.adresse AS client_adresse
                FROM ventes v
@@ -401,6 +457,48 @@ class Database:
             (f"{jour}%",),
         ).fetchone()
         return int(row["n"])
+
+    def ca_par_jour(self, nb_jours: int = 14) -> list[tuple[str, float]]:
+        """Chiffre d'affaires (TTC) par jour sur les ``nb_jours`` derniers jours.
+
+        Retourne une liste ordonnee ``[(jour 'AAAA-MM-JJ', ca), ...]``, avec les
+        jours sans vente a 0 (pour un graphique continu).
+        """
+        nb_jours = max(1, int(nb_jours))
+        debut = date.today() - timedelta(days=nb_jours - 1)
+        rows = self.conn.execute(
+            "SELECT substr(date_vente, 1, 10) AS jour, COALESCE(SUM(total), 0) AS ca "
+            "FROM ventes WHERE substr(date_vente, 1, 10) >= ? GROUP BY jour",
+            (debut.strftime("%Y-%m-%d"),),
+        ).fetchall()
+        par_jour = {r["jour"]: float(r["ca"]) for r in rows}
+        resultat = []
+        for i in range(nb_jours):
+            cle = (debut + timedelta(days=i)).strftime("%Y-%m-%d")
+            resultat.append((cle, par_jour.get(cle, 0.0)))
+        return resultat
+
+    def totaux_ventes_periode(self, date_debut: str, date_fin: str) -> dict:
+        """Totaux agreges des ventes sur une periode (brut, remise, HT, TVA, TTC)."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n, "
+            "COALESCE(SUM(montant_brut), 0) AS brut, "
+            "COALESCE(SUM(remise), 0) AS remise, "
+            "COALESCE(SUM(montant_tva), 0) AS tva, "
+            "COALESCE(SUM(total), 0) AS ttc "
+            "FROM ventes WHERE substr(date_vente, 1, 10) BETWEEN ? AND ?",
+            (date_debut, date_fin),
+        ).fetchone()
+        brut = float(row["brut"])
+        remise = float(row["remise"])
+        return {
+            "nombre": int(row["n"]),
+            "brut": brut,
+            "remise": remise,
+            "ht": brut - remise,
+            "tva": float(row["tva"]),
+            "ttc": float(row["ttc"]),
+        }
 
     # ------------------------------------------------------------------ #
     # Fournisseurs
@@ -538,7 +636,8 @@ class Database:
     def ventes_periode(self, date_debut: str, date_fin: str) -> list[sqlite3.Row]:
         """Ventes dont la date est comprise entre date_debut et date_fin (inclus)."""
         return self.conn.execute(
-            """SELECT v.id, v.date_vente, v.total,
+            """SELECT v.id, v.date_vente, v.montant_brut, v.remise,
+                      v.taux_tva, v.montant_tva, v.total,
                       COALESCE(c.nom, 'Client de passage') AS client_nom
                FROM ventes v
                LEFT JOIN clients c ON c.id = v.client_id

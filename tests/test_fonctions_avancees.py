@@ -82,7 +82,7 @@ class TestRapports(unittest.TestCase):
         self.jour = datetime.now().strftime("%Y-%m-%d")
         p = self.db.ajouter_produit("RIZ25", "Sac de riz 25 kg", 12000, 15000, 40, 5)
         c = self.db.ajouter_client("Boutique Fatou", "770", "Dakar")
-        self.db.enregistrer_vente(c, [{"produit_id": p, "quantite": 3}])
+        self.db.enregistrer_vente(c, [{"produit_id": p, "quantite": 3}], taux_tva=0)
 
     def tearDown(self):
         self.db.fermer()
@@ -167,6 +167,79 @@ class TestFacture(unittest.TestCase):
         with self.assertRaises(ValueError):
             generer_facture_html(db, 999)
         db.fermer()
+
+    def test_facture_avec_tva_et_remise(self):
+        db = Database(":memory:")
+        p = db.ajouter_produit("RIZ25", "Sac de riz 25 kg", 12000, 15000, 40, 5)
+        c = db.ajouter_client("Fatou", "770", "Dakar")
+        vid = db.enregistrer_vente(c, [{"produit_id": p, "quantite": 4}],
+                                   remise=5000, taux_tva=18)
+        with tempfile.TemporaryDirectory() as d:
+            with open(generer_facture_html(db, vid, dossier=d), encoding="utf-8") as fh:
+                html = fh.read()
+        for attendu in ["Sous-total", "Remise", "Total HT", "TVA (18%)",
+                        "9 900 FCFA", "TOTAL TTC", "64 900 FCFA"]:
+            self.assertIn(attendu, html)
+        db.fermer()
+
+
+class TestTVAEtRemise(unittest.TestCase):
+    def setUp(self):
+        self.db = Database(":memory:")
+        self.pid = self.db.ajouter_produit("RIZ25", "Sac de riz 25 kg",
+                                           12000, 15000, 40, 5)
+        self.cid = self.db.ajouter_client("Fatou", "770", "Dakar")
+
+    def tearDown(self):
+        self.db.fermer()
+
+    def test_calcul_tva_et_remise(self):
+        vid = self.db.enregistrer_vente(
+            self.cid, [{"produit_id": self.pid, "quantite": 4}],
+            remise=5000, taux_tva=18)
+        v = self.db.obtenir_vente(vid)
+        self.assertEqual(v["montant_brut"], 60000)   # 4 * 15000
+        self.assertEqual(v["remise"], 5000)
+        self.assertEqual(v["montant_tva"], 9900)      # (60000-5000) * 18%
+        self.assertEqual(v["total"], 64900)           # 55000 + 9900
+
+    def test_tva_par_defaut_depuis_parametre(self):
+        # Parametre par defaut = 18.
+        vid = self.db.enregistrer_vente(
+            self.cid, [{"produit_id": self.pid, "quantite": 1}])
+        v = self.db.obtenir_vente(vid)
+        self.assertEqual(v["taux_tva"], 18.0)
+        self.assertEqual(v["total"], 17700.0)         # 15000 * 1.18
+
+    def test_remise_bornee_au_brut(self):
+        # Une remise superieure au brut est plafonnee.
+        vid = self.db.enregistrer_vente(
+            self.cid, [{"produit_id": self.pid, "quantite": 1}],
+            remise=999999, taux_tva=0)
+        v = self.db.obtenir_vente(vid)
+        self.assertEqual(v["remise"], 15000)          # plafonnee au brut
+        self.assertEqual(v["total"], 0)
+
+    def test_totaux_periode(self):
+        jour = datetime.now().strftime("%Y-%m-%d")
+        self.db.enregistrer_vente(
+            self.cid, [{"produit_id": self.pid, "quantite": 4}],
+            remise=5000, taux_tva=18)
+        t = self.db.totaux_ventes_periode(jour, jour)
+        self.assertEqual(t["nombre"], 1)
+        self.assertEqual(t["brut"], 60000)
+        self.assertEqual(t["remise"], 5000)
+        self.assertEqual(t["ht"], 55000)
+        self.assertEqual(t["tva"], 9900)
+        self.assertEqual(t["ttc"], 64900)
+
+    def test_ca_par_jour_longueur_et_ordre(self):
+        serie = self.db.ca_par_jour(10)
+        self.assertEqual(len(serie), 10)
+        # Les jours sont ordonnes croissants et le dernier est aujourd'hui.
+        jours = [j for j, _ in serie]
+        self.assertEqual(jours, sorted(jours))
+        self.assertEqual(jours[-1], datetime.now().strftime("%Y-%m-%d"))
 
 
 if __name__ == "__main__":

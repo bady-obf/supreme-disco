@@ -33,7 +33,8 @@ MODELE = """<!doctype html>
   th, td {{ border: 1px solid #ccc; padding: 8px 10px; }}
   th {{ background: #f0f0f0; text-align: left; }}
   td.nombre, th.nombre {{ text-align: right; }}
-  tfoot td {{ font-weight: bold; font-size: 15px; }}
+  tfoot td {{ font-weight: bold; }}
+  tfoot .total-final td {{ font-size: 16px; border-top: 2px solid #999; }}
   .merci {{ margin-top: 30px; font-size: 13px; color: #666; }}
   @media print {{ .noprint {{ display: none; }} body {{ margin: 10mm; }} }}
   .noprint {{ margin-bottom: 18px; }}
@@ -77,10 +78,7 @@ MODELE = """<!doctype html>
     {lignes}
   </tbody>
   <tfoot>
-    <tr>
-      <td colspan="3" class="nombre">TOTAL</td>
-      <td class="nombre">{total}</td>
-    </tr>
+    {totaux}
   </tfoot>
 </table>
 
@@ -88,6 +86,36 @@ MODELE = """<!doctype html>
 </body>
 </html>
 """
+
+
+def _ligne_total(libelle: str, valeur: str, classe: str = "") -> str:
+    """Genere une ligne de total du pied de facture."""
+    attr = f' class="{classe}"' if classe else ""
+    return (f'<tr{attr}><td colspan="3" class="nombre">{escape(libelle)}</td>'
+            f'<td class="nombre">{escape(valeur)}</td></tr>')
+
+
+def _construire_totaux(vente) -> str:
+    """Construit les lignes de totaux d'une facture (remise/TVA affichees si utiles)."""
+    brut = vente["montant_brut"] or 0
+    remise = vente["remise"] or 0
+    taux_tva = vente["taux_tva"] or 0
+    montant_tva = vente["montant_tva"] or 0
+    total = vente["total"] or 0
+    base_ht = brut - remise
+
+    lignes = []
+    # Detaille seulement si une remise ou une TVA s'applique.
+    if remise > 0 or taux_tva > 0 or montant_tva > 0:
+        lignes.append(_ligne_total("Sous-total", format_montant(brut)))
+        if remise > 0:
+            lignes.append(_ligne_total("Remise", "- " + format_montant(remise)))
+        lignes.append(_ligne_total("Total HT", format_montant(base_ht)))
+        lignes.append(_ligne_total(f"TVA ({taux_tva:g}%)", format_montant(montant_tva)))
+        lignes.append(_ligne_total("TOTAL TTC", format_montant(total), "total-final"))
+    else:
+        lignes.append(_ligne_total("TOTAL", format_montant(total), "total-final"))
+    return "".join(lignes)
 
 
 def generer_facture_html(db, vente_id: int, dossier: str = "factures") -> str:
@@ -117,6 +145,8 @@ def generer_facture_html(db, vente_id: int, dossier: str = "factures") -> str:
         if p
     )
 
+    totaux_html = _construire_totaux(vente)
+
     html = MODELE.format(
         numero=vente["id"],
         date=escape(vente["date_vente"]),
@@ -127,7 +157,7 @@ def generer_facture_html(db, vente_id: int, dossier: str = "factures") -> str:
         client_nom=escape(client_nom),
         client_contact=escape(contact),
         lignes=lignes_html,
-        total=escape(format_montant(vente["total"])),
+        totaux=totaux_html,
     )
 
     Path(dossier).mkdir(parents=True, exist_ok=True)

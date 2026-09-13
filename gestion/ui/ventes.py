@@ -14,7 +14,7 @@ from tkinter import messagebox, ttk
 
 from ..database import StockInsuffisant
 from ..facture import imprimer_facture
-from .widgets import format_montant, lire_int
+from .widgets import format_montant, lire_float, lire_int
 
 
 class OngletVentes(ttk.Frame):
@@ -31,6 +31,7 @@ class OngletVentes(ttk.Frame):
         self._construire_entete()
         self._construire_ligne_ajout()
         self._construire_panier()
+        self._construire_totaux()
         self._construire_pied()
         self.rafraichir()
 
@@ -87,14 +88,57 @@ class OngletVentes(ttk.Frame):
 
         ttk.Button(pied, text="Retirer la ligne", command=self._retirer_ligne).pack(side="left")
         ttk.Button(pied, text="Vider le panier", command=self._vider_panier).pack(side="left", padx=6)
-
-        self.var_total = tk.StringVar(value=format_montant(0))
-        ttk.Label(pied, textvariable=self.var_total, font=("TkDefaultFont", 12, "bold")
-                  ).pack(side="right", padx=10)
-        ttk.Label(pied, text="TOTAL :").pack(side="right")
-
         ttk.Button(pied, text="Valider la vente", command=self._valider_vente).pack(
             side="right", padx=20)
+
+    def _construire_totaux(self):
+        cadre = ttk.LabelFrame(self, text="Remise et TVA", padding=10)
+        cadre.pack(fill="x", pady=(10, 0))
+
+        # --- Colonne gauche : saisie remise / TVA ---
+        saisie = ttk.Frame(cadre)
+        saisie.pack(side="left", anchor="n")
+
+        ttk.Label(saisie, text="Remise :").grid(row=0, column=0, sticky="w", padx=4, pady=3)
+        self.var_remise = tk.StringVar(value="0")
+        entree_remise = ttk.Entry(saisie, textvariable=self.var_remise, width=12)
+        entree_remise.grid(row=0, column=1, sticky="w", padx=4, pady=3)
+        entree_remise.bind("<KeyRelease>", lambda _e: self._afficher_panier())
+
+        self.var_remise_type = tk.StringVar(value="FCFA")
+        combo_type = ttk.Combobox(saisie, textvariable=self.var_remise_type,
+                                  state="readonly", width=6, values=["FCFA", "%"])
+        combo_type.grid(row=0, column=2, sticky="w", padx=4, pady=3)
+        combo_type.bind("<<ComboboxSelected>>", lambda _e: self._afficher_panier())
+
+        ttk.Label(saisie, text="TVA (%) :").grid(row=1, column=0, sticky="w", padx=4, pady=3)
+        self.var_tva = tk.StringVar(value="0")
+        entree_tva = ttk.Entry(saisie, textvariable=self.var_tva, width=12)
+        entree_tva.grid(row=1, column=1, sticky="w", padx=4, pady=3)
+        entree_tva.bind("<KeyRelease>", lambda _e: self._afficher_panier())
+
+        # --- Colonne droite : recapitulatif ---
+        recap = ttk.Frame(cadre)
+        recap.pack(side="right", anchor="e")
+
+        self.var_brut = tk.StringVar(value=format_montant(0))
+        self.var_remise_calc = tk.StringVar(value=format_montant(0))
+        self.var_ht = tk.StringVar(value=format_montant(0))
+        self.var_tva_calc = tk.StringVar(value=format_montant(0))
+        self.var_ttc = tk.StringVar(value=format_montant(0))
+
+        recap_lignes = [
+            ("Sous-total :", self.var_brut, False),
+            ("Remise :", self.var_remise_calc, False),
+            ("Total HT :", self.var_ht, False),
+            ("TVA :", self.var_tva_calc, False),
+            ("TOTAL TTC :", self.var_ttc, True),
+        ]
+        for i, (libelle, var, gras) in enumerate(recap_lignes):
+            police = ("TkDefaultFont", 12, "bold") if gras else ("TkDefaultFont", 10)
+            ttk.Label(recap, text=libelle).grid(row=i, column=0, sticky="e", padx=6, pady=1)
+            ttk.Label(recap, textvariable=var, font=police).grid(
+                row=i, column=1, sticky="e", padx=6, pady=1)
 
     # ------------------------------------------------------------------ #
     # Logique
@@ -117,6 +161,12 @@ class OngletVentes(ttk.Frame):
             self._map_produits[libelle] = p["id"]
             libelles.append(libelle)
         self.combo_produit["values"] = libelles
+
+        # Pre-remplit la TVA depuis les parametres pour une nouvelle vente
+        # (panier vide), sans ecraser une saisie en cours.
+        if not self.panier and hasattr(self, "var_tva"):
+            self.var_tva.set(self.db.obtenir_parametre("taux_tva", "0"))
+            self._afficher_panier()
 
     def _ajouter_au_panier(self):
         libelle = self.var_produit.get()
@@ -161,19 +211,38 @@ class OngletVentes(ttk.Frame):
         self.var_quantite.set("1")
         self._afficher_panier()
 
+    def _calcul_totaux(self) -> dict:
+        """Calcule brut, remise, HT, TVA et TTC d'apres le panier et les saisies."""
+        brut = sum(l["prix"] * l["quantite"] for l in self.panier)
+        valeur_remise = lire_float(self.var_remise.get())
+        if self.var_remise_type.get() == "%":
+            remise = brut * valeur_remise / 100.0
+        else:
+            remise = valeur_remise
+        remise = max(0.0, min(remise, brut))
+        taux_tva = max(0.0, lire_float(self.var_tva.get()))
+        base_ht = brut - remise
+        montant_tva = round(base_ht * taux_tva / 100.0, 2)
+        ttc = round(base_ht + montant_tva, 2)
+        return {"brut": brut, "remise": remise, "ht": base_ht,
+                "taux_tva": taux_tva, "tva": montant_tva, "ttc": ttc}
+
     def _afficher_panier(self):
         for item in self.tableau.get_children():
             self.tableau.delete(item)
-        total = 0.0
         for i, ligne in enumerate(self.panier):
             montant = ligne["prix"] * ligne["quantite"]
-            total += montant
             self.tableau.insert(
                 "", "end", iid=str(i),
                 values=(ligne["designation"], format_montant(ligne["prix"]),
                         ligne["quantite"], format_montant(montant)),
             )
-        self.var_total.set(format_montant(total))
+        t = self._calcul_totaux()
+        self.var_brut.set(format_montant(t["brut"]))
+        self.var_remise_calc.set("- " + format_montant(t["remise"]))
+        self.var_ht.set(format_montant(t["ht"]))
+        self.var_tva_calc.set(format_montant(t["tva"]))
+        self.var_ttc.set(format_montant(t["ttc"]))
 
     def _retirer_ligne(self):
         selection = self.tableau.selection()
@@ -196,8 +265,11 @@ class OngletVentes(ttk.Frame):
         client_id = self._map_clients.get(self.var_client.get())
         lignes = [{"produit_id": l["produit_id"], "quantite": l["quantite"]}
                   for l in self.panier]
+        totaux = self._calcul_totaux()
         try:
-            vente_id = self.db.enregistrer_vente(client_id, lignes)
+            vente_id = self.db.enregistrer_vente(
+                client_id, lignes,
+                remise=totaux["remise"], taux_tva=totaux["taux_tva"])
         except StockInsuffisant as err:
             messagebox.showerror("Stock insuffisant", str(err))
             return
@@ -207,6 +279,7 @@ class OngletVentes(ttk.Frame):
 
         self._vider_panier()
         self.var_client.set("Client de passage")
+        self.var_remise.set("0")
         self.rafraichir()
         if self.on_change:
             self.on_change()

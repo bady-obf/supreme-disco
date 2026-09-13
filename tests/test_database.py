@@ -71,11 +71,12 @@ class TestDatabase(unittest.TestCase):
     def test_enregistrer_vente_decremente_le_stock(self):
         pid = self.db.ajouter_produit("REF001", "Sac de ciment", 3500, 4200, 100, 10)
         cid = self.db.ajouter_client("Chantier Diallo", "76000000", "Thies")
-        vid = self.db.enregistrer_vente(cid, [{"produit_id": pid, "quantite": 12}])
+        vid = self.db.enregistrer_vente(cid, [{"produit_id": pid, "quantite": 12}],
+                                        taux_tva=0)
         self.assertIsInstance(vid, int)
         # Le stock doit avoir baisse de 12.
         self.assertEqual(self.db.obtenir_produit(pid)["quantite"], 88)
-        # Le total doit valoir 12 * 4200.
+        # Le total (sans TVA) doit valoir 12 * 4200.
         ventes = self.db.lister_ventes()
         self.assertEqual(ventes[0]["total"], 12 * 4200)
 
@@ -108,8 +109,9 @@ class TestDatabase(unittest.TestCase):
         p2 = self.db.ajouter_produit("R2", "B", 500, 800, 20)    # valeur achat 10000
         self.assertEqual(self.db.valeur_stock(), 20000)
         self.assertEqual(self.db.nombre_produits(), 2)
-        self.db.enregistrer_vente(None, [{"produit_id": p1, "quantite": 2}])
-        # CA du jour = 2 * 1500 = 3000
+        self.db.enregistrer_vente(None, [{"produit_id": p1, "quantite": 2}],
+                                  taux_tva=0)
+        # CA du jour (sans TVA) = 2 * 1500 = 3000
         self.assertEqual(self.db.chiffre_affaires_jour(), 3000)
         self.assertEqual(self.db.nombre_ventes_jour(), 1)
 

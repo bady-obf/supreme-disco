@@ -14,26 +14,30 @@ données locale — **aucune dépendance externe à installer**.
 ## Fonctionnalités
 
 - **Tableau de bord** : chiffre d'affaires du jour, nombre de ventes, valeur du
-  stock, nombre de produits/clients, et **alertes de stock** (produits sous le seuil).
+  stock, nombre de produits/clients, **graphique du CA des 14 derniers jours**
+  (dessiné sans dépendance externe) et **alertes de stock** (produits sous le seuil).
 - **Produits** : ajouter / modifier / supprimer / rechercher, avec prix d'achat,
   prix de vente, quantité en stock et seuil d'alerte. Les lignes en rupture proche
   sont surlignées.
 - **Clients** : fiche client (nom, téléphone, adresse) avec recherche.
 - **Fournisseurs** : fiche fournisseur (nom, téléphone, adresse) avec recherche.
 - **Nouvelle vente** : panier multi-produits, choix du client (ou « client de
-  passage »), contrôle du stock disponible, validation qui **décrémente le stock
-  automatiquement** (opération atomique : tout ou rien).
+  passage »), **remise** (en montant ou en %) et **TVA** (taux par défaut
+  paramétrable, 18 % pour le Sénégal / zone OHADA), avec récapitulatif
+  Sous-total / Remise / HT / TVA / TTC en direct. La validation **décrémente le
+  stock automatiquement** (opération atomique : tout ou rien).
 - **Facture imprimable** : après une vente (ou depuis l'historique), génération
   d'une **facture HTML** ouverte dans le navigateur, prête à imprimer ou à
   **enregistrer en PDF** (Ctrl+P). L'en-tête reprend les informations de
-  l'entreprise (onglet Paramètres).
+  l'entreprise et le pied détaille **Sous-total, remise, HT, TVA et TTC**.
 - **Approvisionnement** : entrée de stock depuis un fournisseur (panier avec prix
   d'achat), qui **incrémente le stock** et peut mettre à jour le prix d'achat.
 - **Historique** : liste des ventes et détail ligne par ligne.
 - **Rapports par période** : ventes, approvisionnements ou état du stock, exportés
   en **Excel (`.xlsx`)** ou **CSV**. Le `.xlsx` est généré avec la bibliothèque
   standard uniquement (aucune dépendance type `openpyxl` requise).
-- **Paramètres** : informations de l'entreprise imprimées sur les factures.
+- **Paramètres** : informations de l'entreprise imprimées sur les factures et
+  **taux de TVA par défaut**.
 
 > Devise par défaut : **FCFA**. Modifiable dans `gestion/ui/widgets.py`
 > (constante `DEVISE`).
@@ -109,11 +113,12 @@ gestion/
     produits.py         Onglet produits (stock)
     clients.py          Onglet clients
     fournisseurs.py     Onglet fournisseurs
-    ventes.py           Onglet nouvelle vente
+    ventes.py           Onglet nouvelle vente (remise + TVA)
     approvisionnements.py  Onglet approvisionnement (entrées de stock)
     historique.py       Onglet historique des ventes
     rapports.py         Onglet rapports (export Excel / CSV)
-    parametres.py       Onglet paramètres (infos entreprise)
+    parametres.py       Onglet paramètres (infos entreprise, TVA)
+    graphique.py        Histogramme du CA par jour (Canvas, sans dépendance)
     widgets.py          Utilitaires partagés (formatage, devise)
 tests/
   test_database.py            Tests de la couche base de données
@@ -131,6 +136,5 @@ Prochaines étapes possibles :
 
 - Authentification (plusieurs utilisateurs, droits d'accès).
 - Sauvegarde/restauration de la base de données.
-- Graphiques d'évolution des ventes sur le tableau de bord.
-- Gestion de la TVA et des remises sur les factures.
 - Numérotation personnalisée des factures.
+- Gestion de plusieurs taux de TVA par produit.

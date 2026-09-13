@@ -23,12 +23,14 @@ class OngletParametres(ttk.Frame):
         self.var_adresse = tk.StringVar()
         self.var_telephone = tk.StringVar()
         self.var_email = tk.StringVar()
+        self.var_tva = tk.StringVar()
 
         champs = [
             ("Nom de l'entreprise", self.var_nom),
             ("Adresse", self.var_adresse),
             ("Telephone", self.var_telephone),
             ("Email", self.var_email),
+            ("Taux de TVA par defaut (%)", self.var_tva),
         ]
         for i, (libelle, var) in enumerate(champs):
             ttk.Label(cadre, text=libelle).grid(row=i, column=0, sticky="w", padx=5, pady=6)
@@ -50,12 +52,24 @@ class OngletParametres(ttk.Frame):
         self.var_adresse.set(infos["entreprise_adresse"])
         self.var_telephone.set(infos["entreprise_telephone"])
         self.var_email.set(infos["entreprise_email"])
+        self.var_tva.set(infos.get("taux_tva", "0"))
 
     def _enregistrer(self):
         self.db.definir_parametre("entreprise_nom", self.var_nom.get().strip())
         self.db.definir_parametre("entreprise_adresse", self.var_adresse.get().strip())
         self.db.definir_parametre("entreprise_telephone", self.var_telephone.get().strip())
         self.db.definir_parametre("entreprise_email", self.var_email.get().strip())
+        # Valide le taux de TVA (nombre >= 0).
+        taux = self.var_tva.get().strip().replace(",", ".")
+        try:
+            valeur = float(taux) if taux else 0.0
+            if valeur < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning("TVA invalide",
+                                   "Le taux de TVA doit etre un nombre positif (ex. 18).")
+            return
+        self.db.definir_parametre("taux_tva", str(valeur))
         if self.on_change:
             self.on_change()
         messagebox.showinfo("Succes", "Parametres enregistres.")

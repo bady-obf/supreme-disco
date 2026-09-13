@@ -5,6 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from .graphique import GraphiqueVentes
 from .widgets import format_montant
 
 
@@ -13,8 +14,15 @@ class OngletDashboard(ttk.Frame):
         super().__init__(parent, padding=15)
         self.db = db
         self._construire_cartes()
+        self._construire_graphique()
         self._construire_alertes()
         self.rafraichir()
+
+    def _construire_graphique(self):
+        cadre = ttk.Frame(self)
+        cadre.pack(fill="both", expand=True, pady=(12, 0))
+        self.graphique = GraphiqueVentes(cadre, self.db, nb_jours=14)
+        self.graphique.pack(fill="both", expand=True)
 
     def _construire_cartes(self):
         cadre = ttk.Frame(self)
@@ -42,7 +50,7 @@ class OngletDashboard(ttk.Frame):
         cadre.pack(fill="both", expand=True, pady=(12, 0))
 
         colonnes = ("reference", "designation", "quantite", "seuil")
-        self.tableau = ttk.Treeview(cadre, columns=colonnes, show="headings", height=8)
+        self.tableau = ttk.Treeview(cadre, columns=colonnes, show="headings", height=5)
         for col, (titre, largeur, ancre) in {
             "reference": ("Reference", 120, "w"),
             "designation": ("Designation", 300, "w"),
@@ -62,12 +70,14 @@ class OngletDashboard(ttk.Frame):
         self.label_aucune.pack(anchor="w", pady=(6, 0))
 
     def rafraichir(self):
-        """Recalcule tous les indicateurs et la liste d'alertes."""
+        """Recalcule tous les indicateurs, le graphique et la liste d'alertes."""
         self._valeurs["ca_jour"].config(text=format_montant(self.db.chiffre_affaires_jour()))
         self._valeurs["ventes_jour"].config(text=str(self.db.nombre_ventes_jour()))
         self._valeurs["valeur_stock"].config(text=format_montant(self.db.valeur_stock()))
         self._valeurs["nb_produits"].config(text=str(self.db.nombre_produits()))
         self._valeurs["nb_clients"].config(text=str(self.db.nombre_clients()))
+
+        self.graphique.rafraichir()
 
         for item in self.tableau.get_children():
             self.tableau.delete(item)

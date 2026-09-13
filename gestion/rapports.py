@@ -29,21 +29,29 @@ def rapport_ventes(db, date_debut: str, date_fin: str):
     """Rapport des ventes sur une periode : synthese, detail, top produits."""
     ventes = db.ventes_periode(date_debut, date_fin)
     par_produit = db.ventes_par_produit_periode(date_debut, date_fin)
-    ca = db.ca_periode(date_debut, date_fin)
+    totaux = db.totaux_ventes_periode(date_debut, date_fin)
 
     synthese = {
         "nom": "Synthèse",
         "entetes": ["Indicateur", "Valeur"],
         "lignes": [
             ["Période", f"{date_debut} au {date_fin}"],
-            ["Nombre de ventes", len(ventes)],
-            ["Chiffre d'affaires (FCFA)", _n(ca)],
+            ["Nombre de ventes", totaux["nombre"]],
+            ["Total brut (FCFA)", _n(totaux["brut"])],
+            ["Remises (FCFA)", _n(totaux["remise"])],
+            ["Chiffre d'affaires HT (FCFA)", _n(totaux["ht"])],
+            ["TVA collectée (FCFA)", _n(totaux["tva"])],
+            ["Chiffre d'affaires TTC (FCFA)", _n(totaux["ttc"])],
         ],
     }
     detail = {
         "nom": "Ventes",
-        "entetes": ["N°", "Date", "Client", "Total (FCFA)"],
-        "lignes": [[v["id"], v["date_vente"], v["client_nom"], _n(v["total"])]
+        "entetes": ["N°", "Date", "Client", "Brut (FCFA)", "Remise (FCFA)",
+                    "HT (FCFA)", "TVA (FCFA)", "TTC (FCFA)"],
+        "lignes": [[v["id"], v["date_vente"], v["client_nom"],
+                    _n(v["montant_brut"]), _n(v["remise"]),
+                    _n(v["montant_brut"] - v["remise"]),
+                    _n(v["montant_tva"]), _n(v["total"])]
                    for v in ventes],
     }
     produits = {
