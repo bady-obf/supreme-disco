@@ -1,0 +1,2 @@
+# Ce dossier accueille la base SQLite locale (data/gestion.db),
+# creee automatiquement au premier demarrage. Le fichier .db est ignore par git.

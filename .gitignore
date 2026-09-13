@@ -1,0 +1,21 @@
+# Base de donnees locale (generee au demarrage)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Fichiers generes par l'application
+factures/
+rapports/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Systeme
+.DS_Store
+Thumbs.db
