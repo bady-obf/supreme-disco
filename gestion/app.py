@@ -6,10 +6,14 @@ import tkinter as tk
 from tkinter import ttk
 
 from .database import Database
+from .ui.approvisionnements import OngletApprovisionnements
 from .ui.clients import OngletClients
 from .ui.dashboard import OngletDashboard
+from .ui.fournisseurs import OngletFournisseurs
 from .ui.historique import OngletHistorique
+from .ui.parametres import OngletParametres
 from .ui.produits import OngletProduits
+from .ui.rapports import OngletRapports
 from .ui.ventes import OngletVentes
 
 
@@ -42,14 +46,23 @@ class Application(tk.Tk):
         self.dashboard = OngletDashboard(self.notebook, self.db)
         self.produits = OngletProduits(self.notebook, self.db, on_change=self._maj_globale)
         self.clients = OngletClients(self.notebook, self.db, on_change=self._maj_globale)
+        self.fournisseurs = OngletFournisseurs(self.notebook, self.db, on_change=self._maj_globale)
         self.ventes = OngletVentes(self.notebook, self.db, on_change=self._maj_globale)
+        self.approvisionnements = OngletApprovisionnements(
+            self.notebook, self.db, on_change=self._maj_globale)
         self.historique = OngletHistorique(self.notebook, self.db)
+        self.rapports = OngletRapports(self.notebook, self.db)
+        self.parametres = OngletParametres(self.notebook, self.db)
 
         self.notebook.add(self.dashboard, text="  Tableau de bord  ")
         self.notebook.add(self.produits, text="  Produits  ")
         self.notebook.add(self.clients, text="  Clients  ")
+        self.notebook.add(self.fournisseurs, text="  Fournisseurs  ")
         self.notebook.add(self.ventes, text="  Nouvelle vente  ")
+        self.notebook.add(self.approvisionnements, text="  Approvisionnement  ")
         self.notebook.add(self.historique, text="  Historique  ")
+        self.notebook.add(self.rapports, text="  Rapports  ")
+        self.notebook.add(self.parametres, text="  Parametres  ")
 
         # Rafraichit l'onglet affiche quand on change d'onglet
         # (utile pour la vente qui depend des produits/clients a jour).
@@ -59,6 +72,7 @@ class Application(tk.Tk):
         """Rafraichit les ecrans dependant des donnees partagees."""
         self.dashboard.rafraichir()
         self.ventes.rafraichir()
+        self.approvisionnements.rafraichir()
         self.historique.rafraichir()
 
     def _au_changement_onglet(self, _event=None):

@@ -35,14 +35,35 @@ def main():
     for nom, tel, adr in clients:
         db.ajouter_client(nom, tel, adr)
 
+    fournisseurs = [
+        ("Grossiste Central", "780000001", "Zone industrielle, Dakar"),
+        ("Import Sahel", "780000002", "Kaolack"),
+    ]
+    fids = {}
+    for nom, tel, adr in fournisseurs:
+        fids[nom] = db.ajouter_fournisseur(nom, tel, adr)
+
+    # Informations de l'entreprise (en-tete des factures).
+    db.definir_parametre("entreprise_nom", "Ma Boutique")
+    db.definir_parametre("entreprise_adresse", "Marche central, Dakar")
+    db.definir_parametre("entreprise_telephone", "+221 33 000 00 00")
+
+    # Un approvisionnement d'exemple (entree de stock).
+    if "CIM50" in ids:
+        db.enregistrer_approvisionnement(
+            fids["Grossiste Central"],
+            [{"produit_id": ids["CIM50"], "quantite": 50, "prix_achat": 3600}],
+        )
+
     # Une vente d'exemple si le riz existe.
     if "RIZ25" in ids:
         cid = db.lister_clients()[0]["id"]
         db.enregistrer_vente(cid, [{"produit_id": ids["RIZ25"], "quantite": 3}])
 
     print("Donnees de demonstration inserees dans data/gestion.db")
-    print(f"- Produits : {db.nombre_produits()}")
-    print(f"- Clients  : {db.nombre_clients()}")
+    print(f"- Produits      : {db.nombre_produits()}")
+    print(f"- Clients       : {db.nombre_clients()}")
+    print(f"- Fournisseurs  : {db.nombre_fournisseurs()}")
     print(f"- Valeur du stock : {db.valeur_stock():,.0f} FCFA".replace(",", " "))
     db.fermer()
 

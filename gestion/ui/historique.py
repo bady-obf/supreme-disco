@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
+from ..facture import imprimer_facture
 from .widgets import format_montant
 
 
@@ -16,7 +17,11 @@ class OngletHistorique(ttk.Frame):
         self.rafraichir()
 
     def _construire(self):
-        ttk.Button(self, text="Rafraichir", command=self.rafraichir).pack(anchor="w", pady=(0, 8))
+        barre = ttk.Frame(self)
+        barre.pack(fill="x", pady=(0, 8))
+        ttk.Button(barre, text="Rafraichir", command=self.rafraichir).pack(side="left")
+        ttk.Button(barre, text="Imprimer la facture",
+                   command=self._imprimer_facture).pack(side="left", padx=6)
 
         panneaux = ttk.Panedwindow(self, orient="horizontal")
         panneaux.pack(fill="both", expand=True)
@@ -65,6 +70,24 @@ class OngletHistorique(ttk.Frame):
             )
         for item in self.table_detail.get_children():
             self.table_detail.delete(item)
+
+    def _imprimer_facture(self):
+        selection = self.table_ventes.selection()
+        if not selection:
+            messagebox.showinfo("Aucune selection",
+                                "Selectionnez une vente dans la liste.")
+            return
+        vente_id = int(selection[0])
+        try:
+            chemin = imprimer_facture(self.db, vente_id)
+        except Exception as err:
+            messagebox.showerror("Erreur", f"Impossible de generer la facture.\n\n{err}")
+            return
+        messagebox.showinfo(
+            "Facture",
+            f"Facture generee et ouverte dans le navigateur.\n\n{chemin}\n\n"
+            "Utilisez Ctrl+P pour imprimer ou enregistrer en PDF.",
+        )
 
     def _au_choix_vente(self, _event=None):
         selection = self.table_ventes.selection()

@@ -19,13 +19,27 @@ données locale — **aucune dépendance externe à installer**.
   prix de vente, quantité en stock et seuil d'alerte. Les lignes en rupture proche
   sont surlignées.
 - **Clients** : fiche client (nom, téléphone, adresse) avec recherche.
+- **Fournisseurs** : fiche fournisseur (nom, téléphone, adresse) avec recherche.
 - **Nouvelle vente** : panier multi-produits, choix du client (ou « client de
   passage »), contrôle du stock disponible, validation qui **décrémente le stock
   automatiquement** (opération atomique : tout ou rien).
+- **Facture imprimable** : après une vente (ou depuis l'historique), génération
+  d'une **facture HTML** ouverte dans le navigateur, prête à imprimer ou à
+  **enregistrer en PDF** (Ctrl+P). L'en-tête reprend les informations de
+  l'entreprise (onglet Paramètres).
+- **Approvisionnement** : entrée de stock depuis un fournisseur (panier avec prix
+  d'achat), qui **incrémente le stock** et peut mettre à jour le prix d'achat.
 - **Historique** : liste des ventes et détail ligne par ligne.
+- **Rapports par période** : ventes, approvisionnements ou état du stock, exportés
+  en **Excel (`.xlsx`)** ou **CSV**. Le `.xlsx` est généré avec la bibliothèque
+  standard uniquement (aucune dépendance type `openpyxl` requise).
+- **Paramètres** : informations de l'entreprise imprimées sur les factures.
 
 > Devise par défaut : **FCFA**. Modifiable dans `gestion/ui/widgets.py`
 > (constante `DEVISE`).
+>
+> Les factures sont enregistrées dans `factures/` et les rapports dans
+> `rapports/` (dossiers créés automatiquement, ignorés par git).
 
 ---
 
@@ -86,27 +100,37 @@ main.py                 Point d'entrée (lance l'application)
 seed_demo.py            Insère des données de démonstration
 gestion/
   database.py           Couche base de données SQLite (logique métier, testée)
+  facture.py            Génération des factures HTML imprimables
+  xlsx.py               Écriture de fichiers Excel (.xlsx) sans dépendance
+  rapports.py           Construction et export des rapports (.xlsx / .csv)
   app.py                Fenêtre principale + assemblage des onglets
   ui/
     dashboard.py        Onglet tableau de bord
     produits.py         Onglet produits (stock)
     clients.py          Onglet clients
+    fournisseurs.py     Onglet fournisseurs
     ventes.py           Onglet nouvelle vente
+    approvisionnements.py  Onglet approvisionnement (entrées de stock)
     historique.py       Onglet historique des ventes
+    rapports.py         Onglet rapports (export Excel / CSV)
+    parametres.py       Onglet paramètres (infos entreprise)
     widgets.py          Utilitaires partagés (formatage, devise)
 tests/
-  test_database.py      Tests de la couche base de données
+  test_database.py            Tests de la couche base de données
+  test_fonctions_avancees.py  Tests fournisseurs, appro, rapports, xlsx, facture
 data/                   Base SQLite locale (générée, ignorée par git)
+factures/               Factures HTML générées (ignoré par git)
+rapports/               Rapports Excel/CSV générés (ignoré par git)
 ```
 
 ---
 
 ## Pistes d'évolution
 
-Ce prototype est volontairement simple. Prochaines étapes possibles :
+Prochaines étapes possibles :
 
-- Impression / export PDF des factures et tickets de vente.
-- Gestion des fournisseurs et des entrées de stock (approvisionnements).
-- Rapports par période (jour / semaine / mois) et export Excel.
 - Authentification (plusieurs utilisateurs, droits d'accès).
 - Sauvegarde/restauration de la base de données.
+- Graphiques d'évolution des ventes sur le tableau de bord.
+- Gestion de la TVA et des remises sur les factures.
+- Numérotation personnalisée des factures.
