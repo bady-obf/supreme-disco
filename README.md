@@ -72,6 +72,35 @@ python3 -c "import tkinter, sqlite3; print('OK')"
 
 ## Lancer l'application
 
+### Raccourci (le plus simple)
+
+Des raccourcis prêts à l'emploi sont fournis à la racine du projet :
+
+| Système | Fichier | Comment faire |
+|---|---|---|
+| **Windows** | `lancer.bat` | **Double-cliquez** dessus. |
+| **macOS** | `lancer.command` | Rendez-le exécutable une fois : `chmod +x lancer.command`, puis **double-cliquez** dessus. |
+| **Linux** | `lancer.sh` | `chmod +x lancer.sh` puis `./lancer.sh` (ou double-clic si votre bureau l'autorise). |
+
+Ces raccourcis se placent automatiquement dans le bon dossier et lancent
+l'application ; en cas de problème (Python absent), ils affichent un message.
+
+> **Astuce Windows** : faites un clic droit sur `lancer.bat` → « Envoyer vers » →
+> « Bureau (créer un raccourci) » pour avoir une icône sur le Bureau.
+>
+> **Astuce Linux (icône de bureau)** : créez un fichier
+> `gestion.desktop` contenant, en adaptant le chemin :
+> ```ini
+> [Desktop Entry]
+> Type=Application
+> Name=Gestion Commerciale
+> Exec=/chemin/vers/supreme-disco/lancer.sh
+> Path=/chemin/vers/supreme-disco
+> Terminal=false
+> ```
+
+### En ligne de commande
+
 Depuis le dossier du projet :
 
 ```bash
@@ -119,6 +148,9 @@ python3 -m unittest discover -s tests -v
 
 ```
 main.py                 Point d'entrée (lance l'application)
+lancer.bat              Raccourci de lancement (Windows)
+lancer.command          Raccourci de lancement (macOS)
+lancer.sh               Raccourci de lancement (Linux)
 seed_demo.py            Insère des données de démonstration
 gestion/
   database.py           Couche base de données SQLite (logique métier, testée)
