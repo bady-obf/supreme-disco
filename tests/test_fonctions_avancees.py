@@ -242,5 +242,57 @@ class TestTVAEtRemise(unittest.TestCase):
         self.assertEqual(jours[-1], datetime.now().strftime("%Y-%m-%d"))
 
 
+class TestSauvegardeRestauration(unittest.TestCase):
+    def setUp(self):
+        self.dossier = tempfile.mkdtemp()
+        self.base = os.path.join(self.dossier, "gestion.db")
+        self.sauv = os.path.join(self.dossier, "sauvegarde.db")
+
+    def test_sauvegarde_puis_restauration(self):
+        db = Database(self.base)
+        db.ajouter_produit("RIZ25", "Sac de riz 25 kg", 12000, 15000, 40, 5)
+        db.sauvegarder(self.sauv)
+        self.assertTrue(os.path.exists(self.sauv))
+        # Modifie puis restaure.
+        db.ajouter_produit("SAV", "Savon", 100, 200, 10, 0)
+        self.assertEqual(db.nombre_produits(), 2)
+        db.restaurer(self.sauv)
+        self.assertEqual(db.nombre_produits(), 1)
+        # La connexion reste utilisable apres restauration.
+        db.ajouter_produit("NEW", "Nouveau", 1, 2, 3, 0)
+        self.assertEqual(db.nombre_produits(), 2)
+        db.fermer()
+
+    def test_restauration_fichier_invalide(self):
+        db = Database(self.base)
+        mauvais = os.path.join(self.dossier, "pasunebase.db")
+        with open(mauvais, "w") as f:
+            f.write("ceci n'est pas une base sqlite")
+        with self.assertRaises(ValueError):
+            db.restaurer(mauvais)
+        db.fermer()
+
+    def test_restauration_remet_schema_a_niveau(self):
+        # Cree une "ancienne" sauvegarde sans les colonnes TVA.
+        import sqlite3
+        vieux = os.path.join(self.dossier, "ancienne.db")
+        con = sqlite3.connect(vieux)
+        con.executescript(
+            "CREATE TABLE produits (id INTEGER PRIMARY KEY, reference TEXT, "
+            "designation TEXT, prix_achat REAL, prix_vente REAL, quantite INTEGER, "
+            "seuil_alerte INTEGER);"
+            "CREATE TABLE ventes (id INTEGER PRIMARY KEY, date_vente TEXT, "
+            "client_id INTEGER, total REAL);")
+        con.commit()
+        con.close()
+        db = Database(self.base)
+        db.restaurer(vieux)
+        # Apres restauration, les colonnes TVA doivent exister (migration relancee).
+        cols = {r["name"] for r in
+                db.conn.execute("PRAGMA table_info(ventes)").fetchall()}
+        self.assertIn("montant_tva", cols)
+        db.fermer()
+
+
 if __name__ == "__main__":
     unittest.main()

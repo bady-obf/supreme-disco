@@ -36,8 +36,10 @@ données locale — **aucune dépendance externe à installer**.
 - **Rapports par période** : ventes, approvisionnements ou état du stock, exportés
   en **Excel (`.xlsx`)** ou **CSV**. Le `.xlsx` est généré avec la bibliothèque
   standard uniquement (aucune dépendance type `openpyxl` requise).
-- **Paramètres** : informations de l'entreprise imprimées sur les factures et
-  **taux de TVA par défaut**.
+- **Paramètres** : informations de l'entreprise imprimées sur les factures,
+  **taux de TVA par défaut**, et **sauvegarde / restauration** de la base de
+  données (copie fiable via l'API de sauvegarde SQLite ; la restauration remet
+  automatiquement le schéma à niveau).
 
 > Devise par défaut : **FCFA**. Modifiable dans `gestion/ui/widgets.py`
 > (constante `DEVISE`).
@@ -135,6 +137,6 @@ rapports/               Rapports Excel/CSV générés (ignoré par git)
 Prochaines étapes possibles :
 
 - Authentification (plusieurs utilisateurs, droits d'accès).
-- Sauvegarde/restauration de la base de données.
 - Numérotation personnalisée des factures.
 - Gestion de plusieurs taux de TVA par produit.
+- Sauvegarde automatique planifiée.

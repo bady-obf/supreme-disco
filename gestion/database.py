@@ -119,9 +119,16 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         # Active le respect des cles etrangeres (desactive par defaut en SQLite).
         self.conn.execute("PRAGMA foreign_keys = ON")
+        self._preparer_schema()
+
+    def _preparer_schema(self) -> None:
+        """Cree/complete le schema et insere les parametres par defaut.
+
+        Idempotent : peut etre relance (notamment apres une restauration de
+        sauvegarde, pour remettre a niveau une base plus ancienne).
+        """
         self.conn.executescript(SCHEMA)
         self._migrer()
-        # Insere les parametres par defaut s'ils n'existent pas encore.
         for cle, valeur in PARAMETRES_DEFAUT.items():
             self.conn.execute(
                 "INSERT OR IGNORE INTO parametres (cle, valeur) VALUES (?, ?)",
@@ -155,6 +162,55 @@ class Database:
     def fermer(self) -> None:
         """Ferme la connexion a la base."""
         self.conn.close()
+
+    # ------------------------------------------------------------------ #
+    # Sauvegarde / restauration
+    # ------------------------------------------------------------------ #
+    def sauvegarder(self, chemin_destination: str) -> str:
+        """Copie la base courante vers ``chemin_destination`` (fichier .db).
+
+        Utilise l'API de sauvegarde en ligne de SQLite : fonctionne meme
+        pendant que l'application utilise la base. Retourne le chemin ecrit.
+
+        Reference : ``sqlite3.Connection.backup``
+        https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.backup
+        """
+        self.conn.commit()
+        destination = sqlite3.connect(chemin_destination)
+        try:
+            with destination:
+                self.conn.backup(destination)
+        finally:
+            destination.close()
+        return chemin_destination
+
+    def restaurer(self, chemin_source: str) -> None:
+        """Remplace le contenu de la base courante par celui de ``chemin_source``.
+
+        Le fichier source est d'abord valide (il doit contenir les tables de
+        l'application). La connexion courante reste ouverte : les ecrans doivent
+        simplement etre rafraichis apres l'appel. Le schema est remis a niveau
+        (migration) au cas ou la sauvegarde proviendrait d'une version anterieure.
+
+        Leve ``ValueError`` si le fichier n'est pas une base valide de l'appli.
+        """
+        source = sqlite3.connect(chemin_source)
+        try:
+            try:
+                tables = {r[0] for r in source.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+            except sqlite3.DatabaseError as err:
+                raise ValueError(
+                    "Ce fichier n'est pas une base de donnees valide de l'application."
+                ) from err
+            if "produits" not in tables or "ventes" not in tables:
+                raise ValueError(
+                    "Ce fichier n'est pas une base de donnees valide de l'application.")
+            source.backup(self.conn)
+        finally:
+            source.close()
+        self.conn.commit()
+        self._preparer_schema()
 
     # ------------------------------------------------------------------ #
     # Parametres (informations de l'entreprise, affichees sur les factures)

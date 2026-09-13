@@ -52,7 +52,9 @@ class Application(tk.Tk):
             self.notebook, self.db, on_change=self._maj_globale)
         self.historique = OngletHistorique(self.notebook, self.db)
         self.rapports = OngletRapports(self.notebook, self.db)
-        self.parametres = OngletParametres(self.notebook, self.db)
+        self.parametres = OngletParametres(
+            self.notebook, self.db,
+            on_change=self._maj_globale, on_restore=self._maj_totale)
 
         self.notebook.add(self.dashboard, text="  Tableau de bord  ")
         self.notebook.add(self.produits, text="  Produits  ")
@@ -74,6 +76,14 @@ class Application(tk.Tk):
         self.ventes.rafraichir()
         self.approvisionnements.rafraichir()
         self.historique.rafraichir()
+
+    def _maj_totale(self):
+        """Rafraichit TOUS les onglets (utilise apres une restauration)."""
+        for onglet in (self.dashboard, self.produits, self.clients,
+                       self.fournisseurs, self.ventes, self.approvisionnements,
+                       self.historique, self.rapports, self.parametres):
+            if hasattr(onglet, "rafraichir"):
+                onglet.rafraichir()
 
     def _au_changement_onglet(self, _event=None):
         onglet = self.notebook.nametowidget(self.notebook.select())

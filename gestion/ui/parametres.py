@@ -1,16 +1,20 @@
-"""Onglet parametres : informations de l'entreprise imprimees sur les factures."""
+"""Onglet parametres : infos entreprise, TVA, et sauvegarde/restauration."""
 
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from datetime import datetime
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 
 class OngletParametres(ttk.Frame):
-    def __init__(self, parent, db, on_change=None):
+    def __init__(self, parent, db, on_change=None, on_restore=None):
         super().__init__(parent, padding=15)
         self.db = db
         self.on_change = on_change
+        # Callback appele apres une restauration (rafraichit TOUS les ecrans).
+        self.on_restore = on_restore
         self._construire()
         self.rafraichir()
 
@@ -46,6 +50,21 @@ class OngletParametres(ttk.Frame):
             foreground="#666",
         ).pack(anchor="w", pady=(10, 0))
 
+        # --- Sauvegarde / restauration ---
+        cadre_sauv = ttk.LabelFrame(self, text="Sauvegarde et restauration",
+                                    padding=12)
+        cadre_sauv.pack(fill="x", pady=(16, 0))
+        ttk.Button(cadre_sauv, text="Sauvegarder la base...",
+                   command=self._sauvegarder).pack(side="left", padx=4)
+        ttk.Button(cadre_sauv, text="Restaurer une sauvegarde...",
+                   command=self._restaurer).pack(side="left", padx=4)
+        ttk.Label(
+            self,
+            text="La sauvegarde copie toutes vos donnees dans un fichier .db. "
+                 "La restauration remplace les donnees actuelles par celles du fichier choisi.",
+            foreground="#666", wraplength=560, justify="left",
+        ).pack(anchor="w", pady=(8, 0))
+
     def rafraichir(self):
         infos = self.db.parametres_entreprise()
         self.var_nom.set(infos["entreprise_nom"])
@@ -73,3 +92,45 @@ class OngletParametres(ttk.Frame):
         if self.on_change:
             self.on_change()
         messagebox.showinfo("Succes", "Parametres enregistres.")
+
+    def _sauvegarder(self):
+        nom_defaut = "gestion_sauvegarde_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".db"
+        chemin = filedialog.asksaveasfilename(
+            title="Enregistrer la sauvegarde",
+            defaultextension=".db",
+            initialfile=nom_defaut,
+            filetypes=[("Base de donnees", "*.db"), ("Tous les fichiers", "*.*")],
+        )
+        if not chemin:
+            return
+        try:
+            self.db.sauvegarder(chemin)
+        except Exception as err:
+            messagebox.showerror("Erreur", f"Sauvegarde impossible.\n\n{err}")
+            return
+        messagebox.showinfo("Sauvegarde",
+                            f"Sauvegarde enregistree :\n{Path(chemin).resolve()}")
+
+    def _restaurer(self):
+        chemin = filedialog.askopenfilename(
+            title="Choisir une sauvegarde a restaurer",
+            filetypes=[("Base de donnees", "*.db"), ("Tous les fichiers", "*.*")],
+        )
+        if not chemin:
+            return
+        if not messagebox.askyesno(
+            "Confirmation",
+            "La restauration va REMPLACER toutes les donnees actuelles par "
+            "celles de la sauvegarde choisie.\n\nContinuer ?",
+        ):
+            return
+        try:
+            self.db.restaurer(chemin)
+        except Exception as err:
+            messagebox.showerror("Erreur", f"Restauration impossible.\n\n{err}")
+            return
+        self.rafraichir()
+        if self.on_restore:
+            self.on_restore()
+        messagebox.showinfo("Restauration",
+                            "Donnees restaurees avec succes.")
