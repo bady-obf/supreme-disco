@@ -242,6 +242,62 @@ class TestTVAEtRemise(unittest.TestCase):
         self.assertEqual(jours[-1], datetime.now().strftime("%Y-%m-%d"))
 
 
+class TestUtilisateurs(unittest.TestCase):
+    def setUp(self):
+        self.db = Database(":memory:")
+
+    def tearDown(self):
+        self.db.fermer()
+
+    def test_creation_et_verification(self):
+        self.assertEqual(self.db.nombre_utilisateurs(), 0)
+        self.db.creer_utilisateur("admin", "secret123", role="admin", nom="Patron")
+        self.assertEqual(self.db.nombre_utilisateurs(), 1)
+        u = self.db.verifier_identifiants("admin", "secret123")
+        self.assertIsNotNone(u)
+        self.assertEqual(u["role"], "admin")
+        self.assertIsNone(self.db.verifier_identifiants("admin", "mauvais"))
+        self.assertIsNone(self.db.verifier_identifiants("inconnu", "x"))
+
+    def test_mot_de_passe_jamais_en_clair(self):
+        self.db.creer_utilisateur("u", "monMotDePasse")
+        row = self.db.conn.execute(
+            "SELECT mot_de_passe_hash FROM utilisateurs WHERE identifiant='u'").fetchone()
+        self.assertNotIn("monMotDePasse", row["mot_de_passe_hash"])
+
+    def test_identifiant_unique(self):
+        self.db.creer_utilisateur("admin", "x", role="admin")
+        with self.assertRaises(ValueError):
+            self.db.creer_utilisateur("admin", "y")
+
+    def test_role_invalide(self):
+        with self.assertRaises(ValueError):
+            self.db.creer_utilisateur("u", "x", role="superman")
+
+    def test_compte_desactive_refuse(self):
+        uid = self.db.creer_utilisateur("admin", "x", role="admin")
+        self.db.creer_utilisateur("v", "y", role="vendeur")
+        vid = [u["id"] for u in self.db.lister_utilisateurs() if u["identifiant"] == "v"][0]
+        self.db.definir_actif(vid, False)
+        self.assertIsNone(self.db.verifier_identifiants("v", "y"))
+
+    def test_dernier_admin_protege(self):
+        uid = self.db.creer_utilisateur("admin", "x", role="admin")
+        # Ni retrograder, ni desactiver, ni supprimer le dernier admin.
+        with self.assertRaises(ValueError):
+            self.db.definir_role(uid, "vendeur")
+        with self.assertRaises(ValueError):
+            self.db.definir_actif(uid, False)
+        with self.assertRaises(ValueError):
+            self.db.supprimer_utilisateur(uid)
+
+    def test_changement_mot_de_passe(self):
+        uid = self.db.creer_utilisateur("u", "ancien")
+        self.db.modifier_mot_de_passe(uid, "nouveau")
+        self.assertIsNone(self.db.verifier_identifiants("u", "ancien"))
+        self.assertIsNotNone(self.db.verifier_identifiants("u", "nouveau"))
+
+
 class TestSauvegardeRestauration(unittest.TestCase):
     def setUp(self):
         self.dossier = tempfile.mkdtemp()

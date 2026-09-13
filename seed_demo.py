@@ -48,6 +48,11 @@ def main():
     db.definir_parametre("entreprise_adresse", "Marche central, Dakar")
     db.definir_parametre("entreprise_telephone", "+221 33 000 00 00")
 
+    # Compte administrateur de demonstration (a changer apres le premier essai !).
+    if db.nombre_utilisateurs() == 0:
+        db.creer_utilisateur("admin", "admin", role="admin", nom="Administrateur")
+        db.creer_utilisateur("vendeur", "vendeur", role="vendeur", nom="Vendeur")
+
     # Un approvisionnement d'exemple (entree de stock).
     if "CIM50" in ids:
         db.enregistrer_approvisionnement(
@@ -64,7 +69,9 @@ def main():
     print(f"- Produits      : {db.nombre_produits()}")
     print(f"- Clients       : {db.nombre_clients()}")
     print(f"- Fournisseurs  : {db.nombre_fournisseurs()}")
+    print(f"- Utilisateurs  : {db.nombre_utilisateurs()} (admin/admin, vendeur/vendeur)")
     print(f"- Valeur du stock : {db.valeur_stock():,.0f} FCFA".replace(",", " "))
+    print("  ! Pensez a changer les mots de passe de demonstration.")
     db.fermer()
 
 

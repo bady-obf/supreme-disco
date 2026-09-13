@@ -13,6 +13,10 @@ données locale — **aucune dépendance externe à installer**.
 
 ## Fonctionnalités
 
+- **Authentification** : écran de connexion, comptes multi-utilisateurs avec
+  **rôles** (`admin` / `vendeur`). Au premier lancement, l'application invite à
+  créer le compte administrateur. Les mots de passe sont **hachés** (PBKDF2), jamais
+  stockés en clair. Un onglet **Utilisateurs** (admin) permet de gérer les comptes.
 - **Tableau de bord** : chiffre d'affaires du jour, nombre de ventes, valeur du
   stock, nombre de produits/clients, **graphique du CA des 14 derniers jours**
   (dessiné sans dépendance externe) et **alertes de stock** (produits sous le seuil).
@@ -77,6 +81,18 @@ python3 main.py
 La base de données est créée automatiquement dans `data/gestion.db` au premier
 démarrage.
 
+Au **premier lancement**, l'application demande de créer le **compte
+administrateur**. Ensuite, chaque démarrage passe par l'écran de connexion.
+
+**Rôles** :
+- `admin` : accès à tout (y compris fournisseurs, approvisionnements, rapports,
+  paramètres et gestion des utilisateurs) ;
+- `vendeur` : tableau de bord, produits, clients, nouvelle vente et historique.
+
+Si vous chargez les données de démonstration (`seed_demo.py`), deux comptes
+sont créés : `admin` / `admin` et `vendeur` / `vendeur` — **pensez à changer ces
+mots de passe**.
+
 ### (Optionnel) Charger des données de démonstration
 
 ```bash
@@ -111,10 +127,12 @@ gestion/
   rapports.py           Construction et export des rapports (.xlsx / .csv)
   app.py                Fenêtre principale + assemblage des onglets
   ui/
+    connexion.py        Écran de connexion / création du 1er admin
     dashboard.py        Onglet tableau de bord
     produits.py         Onglet produits (stock)
     clients.py          Onglet clients
     fournisseurs.py     Onglet fournisseurs
+    utilisateurs.py     Onglet utilisateurs (admin)
     ventes.py           Onglet nouvelle vente (remise + TVA)
     approvisionnements.py  Onglet approvisionnement (entrées de stock)
     historique.py       Onglet historique des ventes
@@ -136,7 +154,7 @@ rapports/               Rapports Excel/CSV générés (ignoré par git)
 
 Prochaines étapes possibles :
 
-- Authentification (plusieurs utilisateurs, droits d'accès).
 - Numérotation personnalisée des factures.
 - Gestion de plusieurs taux de TVA par produit.
 - Sauvegarde automatique planifiée.
+- Journal d'activité par utilisateur.

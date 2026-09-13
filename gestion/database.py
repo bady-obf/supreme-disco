@@ -10,6 +10,10 @@ https://docs.python.org/3/library/sqlite3.html
 
 from __future__ import annotations
 
+import binascii
+import hashlib
+import hmac
+import os
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -93,7 +97,40 @@ CREATE TABLE IF NOT EXISTS lignes_appro (
     FOREIGN KEY (appro_id)   REFERENCES approvisionnements (id) ON DELETE CASCADE,
     FOREIGN KEY (produit_id) REFERENCES produits (id)          ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS utilisateurs (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    identifiant       TEXT    NOT NULL UNIQUE,
+    nom               TEXT,
+    role              TEXT    NOT NULL DEFAULT 'vendeur',
+    sel               TEXT    NOT NULL,
+    mot_de_passe_hash TEXT    NOT NULL,
+    actif             INTEGER NOT NULL DEFAULT 1
+);
 """
+
+# Roles disponibles.
+ROLES = ("admin", "vendeur")
+
+# Nombre d'iterations PBKDF2 (compromis securite / rapidite pour une appli locale).
+_PBKDF2_ITERATIONS = 200_000
+
+
+def _hacher_mot_de_passe(mot_de_passe: str, sel: str | None = None) -> tuple[str, str]:
+    """Retourne (sel, hash hexadecimal) pour un mot de passe via PBKDF2-HMAC-SHA256.
+
+    Si ``sel`` est fourni, il est reutilise (pour verifier un mot de passe) ;
+    sinon un sel aleatoire est genere (pour en enregistrer un nouveau).
+
+    Reference : ``hashlib.pbkdf2_hmac``
+    https://docs.python.org/3/library/hashlib.html#hashlib.pbkdf2_hmac
+    """
+    if sel is None:
+        sel = binascii.hexlify(os.urandom(16)).decode()
+    empreinte = hashlib.pbkdf2_hmac(
+        "sha256", mot_de_passe.encode("utf-8"), sel.encode("utf-8"),
+        _PBKDF2_ITERATIONS)
+    return sel, binascii.hexlify(empreinte).decode()
 
 # Valeurs par defaut des parametres de l'entreprise (utilisees sur les factures).
 # taux_tva : taux de TVA par defaut (Senegal / zone OHADA : 18 %).
@@ -747,3 +784,118 @@ class Database:
             (date_debut, date_fin),
         ).fetchone()
         return float(row["d"])
+
+    # ------------------------------------------------------------------ #
+    # Utilisateurs (authentification)
+    # ------------------------------------------------------------------ #
+    def nombre_utilisateurs(self) -> int:
+        """Nombre de comptes utilisateurs enregistres."""
+        row = self.conn.execute("SELECT COUNT(*) AS n FROM utilisateurs").fetchone()
+        return int(row["n"])
+
+    def creer_utilisateur(self, identifiant: str, mot_de_passe: str,
+                          role: str = "vendeur", nom: str = "") -> int:
+        """Cree un utilisateur (mot de passe hache). Retourne son identifiant.
+
+        Leve ``ValueError`` si l'identifiant/mot de passe est vide, si le role
+        est inconnu, ou si l'identifiant existe deja.
+        """
+        identifiant = identifiant.strip()
+        if not identifiant:
+            raise ValueError("L'identifiant est obligatoire.")
+        if not mot_de_passe:
+            raise ValueError("Le mot de passe est obligatoire.")
+        if role not in ROLES:
+            raise ValueError(f"Role invalide : {role}.")
+        sel, empreinte = _hacher_mot_de_passe(mot_de_passe)
+        try:
+            cur = self.conn.execute(
+                "INSERT INTO utilisateurs (identifiant, nom, role, sel, mot_de_passe_hash) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (identifiant, nom.strip(), role, sel, empreinte),
+            )
+        except sqlite3.IntegrityError as err:
+            raise ValueError(f"L'identifiant « {identifiant} » existe deja.") from err
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def verifier_identifiants(self, identifiant: str, mot_de_passe: str) -> dict | None:
+        """Retourne les infos de l'utilisateur si les identifiants sont valides.
+
+        Ne retourne un utilisateur que s'il est actif et que le mot de passe
+        correspond. Sinon retourne ``None``. La comparaison du hash est faite en
+        temps constant (``hmac.compare_digest``).
+        """
+        row = self.conn.execute(
+            "SELECT * FROM utilisateurs WHERE identifiant = ?",
+            (identifiant.strip(),),
+        ).fetchone()
+        if row is None or not row["actif"]:
+            return None
+        _sel, empreinte = _hacher_mot_de_passe(mot_de_passe, row["sel"])
+        if not hmac.compare_digest(empreinte, row["mot_de_passe_hash"]):
+            return None
+        return {"id": row["id"], "identifiant": row["identifiant"],
+                "nom": row["nom"] or row["identifiant"], "role": row["role"]}
+
+    def lister_utilisateurs(self) -> list[sqlite3.Row]:
+        """Liste les utilisateurs (sans les donnees de mot de passe)."""
+        return self.conn.execute(
+            "SELECT id, identifiant, nom, role, actif FROM utilisateurs "
+            "ORDER BY identifiant"
+        ).fetchall()
+
+    def modifier_mot_de_passe(self, utilisateur_id: int, nouveau: str) -> None:
+        """Remplace le mot de passe d'un utilisateur (nouveau sel + hash)."""
+        if not nouveau:
+            raise ValueError("Le mot de passe est obligatoire.")
+        sel, empreinte = _hacher_mot_de_passe(nouveau)
+        self.conn.execute(
+            "UPDATE utilisateurs SET sel = ?, mot_de_passe_hash = ? WHERE id = ?",
+            (sel, empreinte, utilisateur_id),
+        )
+        self.conn.commit()
+
+    def _nombre_admins_actifs(self) -> int:
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n FROM utilisateurs WHERE role = 'admin' AND actif = 1"
+        ).fetchone()
+        return int(row["n"])
+
+    def definir_role(self, utilisateur_id: int, role: str) -> None:
+        """Change le role d'un utilisateur, sans supprimer le dernier admin actif."""
+        if role not in ROLES:
+            raise ValueError(f"Role invalide : {role}.")
+        actuel = self.conn.execute(
+            "SELECT role, actif FROM utilisateurs WHERE id = ?", (utilisateur_id,)
+        ).fetchone()
+        if (actuel and actuel["role"] == "admin" and actuel["actif"]
+                and role != "admin" and self._nombre_admins_actifs() <= 1):
+            raise ValueError("Impossible : il doit rester au moins un administrateur actif.")
+        self.conn.execute(
+            "UPDATE utilisateurs SET role = ? WHERE id = ?", (role, utilisateur_id))
+        self.conn.commit()
+
+    def definir_actif(self, utilisateur_id: int, actif: bool) -> None:
+        """Active ou desactive un compte, sans desactiver le dernier admin actif."""
+        actuel = self.conn.execute(
+            "SELECT role, actif FROM utilisateurs WHERE id = ?", (utilisateur_id,)
+        ).fetchone()
+        if (not actif and actuel and actuel["role"] == "admin" and actuel["actif"]
+                and self._nombre_admins_actifs() <= 1):
+            raise ValueError("Impossible : il doit rester au moins un administrateur actif.")
+        self.conn.execute(
+            "UPDATE utilisateurs SET actif = ? WHERE id = ?",
+            (1 if actif else 0, utilisateur_id))
+        self.conn.commit()
+
+    def supprimer_utilisateur(self, utilisateur_id: int) -> None:
+        """Supprime un utilisateur, sans supprimer le dernier admin actif."""
+        actuel = self.conn.execute(
+            "SELECT role, actif FROM utilisateurs WHERE id = ?", (utilisateur_id,)
+        ).fetchone()
+        if (actuel and actuel["role"] == "admin" and actuel["actif"]
+                and self._nombre_admins_actifs() <= 1):
+            raise ValueError("Impossible : il doit rester au moins un administrateur actif.")
+        self.conn.execute("DELETE FROM utilisateurs WHERE id = ?", (utilisateur_id,))
+        self.conn.commit()
