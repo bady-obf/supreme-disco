@@ -53,7 +53,7 @@ class GraphiqueVentes(ttk.Frame):
         if not self.donnees:
             self.donnees = self.db.ca_par_jour(self.nb_jours)
 
-        marge_g, marge_d, marge_h, marge_b = 60, 12, 14, 26
+        marge_g, marge_d, marge_h, marge_b = 46, 12, 26, 26
         aire_l = largeur - marge_g - marge_d
         aire_h = hauteur - marge_h - marge_b
         base_y = marge_h + aire_h
@@ -70,13 +70,14 @@ class GraphiqueVentes(ttk.Frame):
                           fill=COULEUR_TEXTE)
             return
 
-        # Ligne et etiquette du maximum.
+        # Ligne du maximum + etiquette AU-DESSUS a gauche (evite tout rognage
+        # meme pour de grands montants).
         c.create_line(marge_g, marge_h, largeur - marge_d, marge_h,
                       fill="#eeeeee")
-        c.create_text(marge_g - 6, marge_h, anchor="e",
-                      text=format_montant(maxi), fill=COULEUR_TEXTE,
+        c.create_text(marge_g, marge_h - 13, anchor="w",
+                      text="Max : " + format_montant(maxi), fill=COULEUR_TEXTE,
                       font=("TkDefaultFont", 8))
-        c.create_text(marge_g - 6, base_y, anchor="e", text="0",
+        c.create_text(marge_g - 4, base_y, anchor="e", text="0",
                       fill=COULEUR_TEXTE, font=("TkDefaultFont", 8))
 
         n = len(self.donnees)
